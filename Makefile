@@ -34,7 +34,7 @@ CONTAINER      ?= all
 all: ubuntu22.04 ubi9 distroless
 
 binary:
-	cd cmd/dcgm-exporter; $(GO) build -trimpath -ldflags "-X main.BuildVersion=${DCGM_VERSION}-${VERSION}"
+	cd cmd/dcgm-exporter; $(GO) build -trimpath -ldflags "$$( bash $(CURDIR)/build/ldflags.sh )"
 
 test-main: generate
 	$(GO) test ./... -short
