@@ -137,10 +137,16 @@ for d in site_dirs:
 
 patched_openapi = False
 spec = None
-try:
-    spec = importlib.util.find_spec("pulp_glue.common.openapi")
-except Exception:
+# pulp-glue 0.40+ uses annotated def _send_request(...). Inserting after the
+# first ":" hits a type hint and SyntaxError's openapi.py. The requests
+# Session.send hook above is enough when it installed.
+if installed:
     spec = None
+else:
+    try:
+        spec = importlib.util.find_spec("pulp_glue.common.openapi")
+    except Exception:
+        spec = None
 
 if spec and spec.origin:
     try:
