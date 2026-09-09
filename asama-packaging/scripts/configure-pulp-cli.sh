@@ -193,22 +193,42 @@ if [ -n "$USER_SITE" ]; then
 fi
 python3 -c "import pulp_reverse_proxy_patch" >/dev/null 2>&1 || true
 
-# pip's pulp console script will not import a user-site sitecustomize.
-# Overwrite ~/.local/bin/pulp so every later `pulp` invocation loads the hook.
-python3 - << 'WRAP'
+# Bake the rewrite into ~/.local/bin/pulp. A separate hook module was not
+# applied to Session.request in the pip console script (Dex still saw /pulp/).
+python3 - "$PULP_PATCH_NETLOC" "$PULP_PATCH_API_ROOT" << 'WRAP'
+import sys
 from pathlib import Path
+
+netloc, api_root = sys.argv[1].rstrip("/"), sys.argv[2]
+if not api_root.startswith("/"):
+    api_root = "/" + api_root
+if not api_root.endswith("/"):
+    api_root = api_root + "/"
+needle = f"{netloc}/pulp/"
+already = f"{netloc}{api_root}"
 bindir = Path.home() / ".local" / "bin"
 bindir.mkdir(parents=True, exist_ok=True)
 (bindir / "pulp").write_text(
     "#!/usr/bin/env python3\n"
-    "import pulp_reverse_proxy_patch\n"
+    f"NEEDLE = {needle!r}\n"
+    f"ALREADY = {already!r}\n"
+    "import requests\n"
+    "_orig = requests.Session.request\n"
+    "def _req(self, method, url, *args, **kwargs):\n"
+    "    if isinstance(url, str) and NEEDLE in url and ALREADY not in url:\n"
+    "        url = url.replace(NEEDLE, ALREADY, 1)\n"
+    "    return _orig(self, method, url, *args, **kwargs)\n"
+    "requests.Session.request = _req\n"
     "from pulp_cli import main\n"
     "if __name__ == '__main__':\n"
     "    raise SystemExit(main())\n"
 )
 (bindir / "pulp").chmod(0o755)
-print(f"Wrote Pulp CLI wrapper {bindir / 'pulp'}")
+print(f"Wrote Pulp CLI wrapper {bindir / 'pulp'} ({needle} -> {already})")
 WRAP
+hash -r 2>/dev/null || true
+command -v pulp
+head -20 "$(command -v pulp)"
 
 echo "Testing Pulp server status via Pulp CLI..."
 if command -v pulp >/dev/null 2>&1; then
