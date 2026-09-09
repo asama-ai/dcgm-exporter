@@ -89,18 +89,17 @@ needle = f"{netloc}/pulp/"
 replacement = f"{netloc}{api_root}"
 already = f"{netloc}{api_root}"
 
+# pulp-glue 0.40 calls Session.request(method, url, ...), not PreparedRequest.send.
 patch_code = f"""try:
     import requests
-    _orig_send = requests.Session.send
+    _orig_request = requests.Session.request
 
-    def _patched_send(self, request, **kwargs):
-        if hasattr(request, "url") and request.url:
-            url = request.url
-            if {needle!r} in url and {already!r} not in url:
-                request.url = url.replace({needle!r}, {replacement!r}, 1)
-        return _orig_send(self, request, **kwargs)
+    def _patched_request(self, method, url, *args, **kwargs):
+        if isinstance(url, str) and {needle!r} in url and {already!r} not in url:
+            url = url.replace({needle!r}, {replacement!r}, 1)
+        return _orig_request(self, method, url, *args, **kwargs)
 
-    requests.Session.send = _patched_send
+    requests.Session.request = _patched_request
 except Exception:
     pass
 """
@@ -128,6 +127,8 @@ for d in site_dirs:
         with open(os.path.join(d, "pulp_reverse_proxy_patch.py"), "w") as f:
             f.write(patch_code.strip() + "\n")
         with open(os.path.join(d, "pulp_reverse_proxy.pth"), "w") as f:
+            f.write("import pulp_reverse_proxy_patch\n")
+        with open(os.path.join(d, "sitecustomize.py"), "w") as f:
             f.write("import pulp_reverse_proxy_patch\n")
         print(f"Installed Pulp reverse-proxy routing hook in {d}")
         installed = True
@@ -181,6 +182,16 @@ if not installed and not patched_openapi:
     )
     sys.exit(1)
 PYEOF
+
+# GitHub runners may skip user-site .pth files; import the hook explicitly.
+USER_SITE="$(python3 -c 'import site; print(site.getusersitepackages())' 2>/dev/null || true)"
+if [ -n "$USER_SITE" ]; then
+  export PYTHONPATH="${USER_SITE}${PYTHONPATH:+:$PYTHONPATH}"
+  if [ -n "${GITHUB_ENV:-}" ]; then
+    echo "PYTHONPATH=${PYTHONPATH}" >> "$GITHUB_ENV"
+  fi
+fi
+python3 -c "import pulp_reverse_proxy_patch" >/dev/null 2>&1 || true
 
 echo "Testing Pulp server status via Pulp CLI..."
 if command -v pulp >/dev/null 2>&1; then
