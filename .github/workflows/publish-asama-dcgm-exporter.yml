@@ -54,8 +54,8 @@ jobs:
           # Debian: one hyphen (upstream - revision). RPM Version cannot contain '-'.
           if [ "$channel" = test ]; then
             rev="asama.test.${asama_n}"
-            echo "DEB_REPOSITORY=${{ secrets.PULP_DEB_TESTING_REPO || 'asama-debian-testing' }}" >> "$GITHUB_ENV"
-            echo "RPM_REPOSITORY=${{ secrets.PULP_RPM_TESTING_REPO || 'asama-rpm-testing' }}" >> "$GITHUB_ENV"
+            echo "DEB_REPOSITORY=${{ secrets.PULP_DEB_TESTING_REPO || secrets.PULP_DEB_REPO_NAME || 'asama-debian-testing' }}" >> "$GITHUB_ENV"
+            echo "RPM_REPOSITORY=${{ secrets.PULP_RPM_TESTING_REPO || secrets.PULP_RPM_REPO_NAME || 'asama-rpm-testing' }}" >> "$GITHUB_ENV"
           else
             rev="asama.${asama_n}"
             echo "DEB_REPOSITORY=${{ secrets.PULP_DEB_PRODUCTION_REPO || 'asama-debian-production' }}" >> "$GITHUB_ENV"
@@ -144,7 +144,8 @@ jobs:
             echo "PULP_BASE_URL unset on this repo; skip Pulp"
             exit 0
           fi
-          python3 -m pip install --user pulp-cli==0.40.6 pulp-cli-deb pulp-cli-rpm==0.40.6
+          # RPM CLI lives in pulp-cli; pulp-cli-rpm is not published on PyPI.
+          python3 -m pip install --user pulp-cli==0.40.6 pulp-cli-deb
           asama-packaging/scripts/configure-pulp-cli.sh
 
       - name: Upload and publish packages in Pulp
