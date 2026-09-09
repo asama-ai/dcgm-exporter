@@ -193,6 +193,23 @@ if [ -n "$USER_SITE" ]; then
 fi
 python3 -c "import pulp_reverse_proxy_patch" >/dev/null 2>&1 || true
 
+# pip's pulp console script will not import a user-site sitecustomize.
+# Overwrite ~/.local/bin/pulp so every later `pulp` invocation loads the hook.
+python3 - << 'WRAP'
+from pathlib import Path
+bindir = Path.home() / ".local" / "bin"
+bindir.mkdir(parents=True, exist_ok=True)
+(bindir / "pulp").write_text(
+    "#!/usr/bin/env python3\n"
+    "import pulp_reverse_proxy_patch\n"
+    "from pulp_cli import main\n"
+    "if __name__ == '__main__':\n"
+    "    raise SystemExit(main())\n"
+)
+(bindir / "pulp").chmod(0o755)
+print(f"Wrote Pulp CLI wrapper {bindir / 'pulp'}")
+WRAP
+
 echo "Testing Pulp server status via Pulp CLI..."
 if command -v pulp >/dev/null 2>&1; then
   pulp status || {
