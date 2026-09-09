@@ -92,15 +92,21 @@ for k, v in cfg.get("cli", {}).items():
     print(f"  {k} = {v!r}")
 PY
 
+export PULP_CLI_CONFIG="$cfg_home"
+export PULP_CLI_BASE_URL="$base_url"
+export PULP_API_ROOT="$api_root"
 if [ -n "${GITHUB_ENV:-}" ]; then
   echo "PULP_CLI_CONFIG=${cfg_home}" >> "$GITHUB_ENV"
+  echo "PULP_CLI_BASE_URL=${base_url}" >> "$GITHUB_ENV"
+  echo "PULP_API_ROOT=${api_root}" >> "$GITHUB_ENV"
 fi
 
-echo "Testing Pulp server status via Pulp CLI..."
+echo "Testing Pulp server status via Pulp CLI (${base_url}${api_root}api/v3/status/)..."
 if command -v pulp >/dev/null 2>&1; then
-  pulp --config "$cfg_home" status || {
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  "$SCRIPT_DIR/pulp-asama.sh" status || {
     echo "ERROR: 'pulp status' failed to connect to Pulp at ${base_url}${api_root}" >&2
-    echo "Hint: api_root must be /pulpui/pulp/ for console.asama.cloud; check PULP_BASE_URL path or PULP_API_ROOT." >&2
+    echo "Hint: Console serves Pulp at /pulpui/pulp/; /pulp/ is Dex. Pass --api-root, not only cli.toml." >&2
     exit 1
   }
 else
