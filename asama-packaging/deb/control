@@ -1,0 +1,13 @@
+Package: asama-dcgm-exporter
+Version: _VERSION_
+Section: base
+Priority: optional
+Architecture: amd64
+Depends: systemd
+Recommends: asama-host-agent
+Replaces: asama-host-agent (<< 2.0.0)
+Breaks: asama-host-agent (<< 2.0.0)
+Maintainer: Asama AI
+Description: Asama AI DCGM Exporter
+ NVIDIA DCGM metrics exporter for Asama Host Agent (GPU hosts).
+ Install alongside asama-host-agent on hosts with NVIDIA GPUs.
