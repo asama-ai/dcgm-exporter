@@ -21,6 +21,7 @@ Source7:        dcgm-exporter-health.env
 Source8:        dcgm-exporter-analysis.env
 
 Requires:       systemd
+Requires(pre):  shadow-utils
 Recommends:     asama-host-agent
 
 %description
