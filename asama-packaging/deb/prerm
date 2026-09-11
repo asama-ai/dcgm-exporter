@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "remove" ]; then
+    systemctl stop asama-dcgm-exporter@identity.service >/dev/null 2>&1 || true
+    systemctl stop asama-dcgm-exporter@analysis.service >/dev/null 2>&1 || true
+    systemctl stop asama-dcgm-exporter@health.service >/dev/null 2>&1 || true
+    systemctl stop asama-dcgm-exporter.service >/dev/null 2>&1 || true
+    systemctl disable asama-dcgm-exporter@identity.service >/dev/null 2>&1 || true
+    systemctl disable asama-dcgm-exporter@analysis.service >/dev/null 2>&1 || true
+    systemctl disable asama-dcgm-exporter@health.service >/dev/null 2>&1 || true
+    systemctl disable asama-dcgm-exporter.service >/dev/null 2>&1 || true
+fi
+
+exit 0

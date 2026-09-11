@@ -1,0 +1,17 @@
+[Unit]
+Description=Asama AI DCGM Exporter (identity, health, analysis)
+Documentation=https://github.com/asama-ai/dcgm-exporter
+After=network.target
+Wants=asama-dcgm-exporter@health.service
+Wants=asama-dcgm-exporter@identity.service
+Wants=asama-dcgm-exporter@analysis.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=/bin/true
+
+[Install]
+WantedBy=multi-user.target
+Also=asama-dcgm-exporter@health.service asama-dcgm-exporter@identity.service asama-dcgm-exporter@analysis.service
