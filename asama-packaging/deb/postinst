@@ -1,0 +1,39 @@
+#!/bin/bash
+set -e
+
+# Create asama-agent user and group if they don't exist (may already exist from host-agent).
+if ! getent group asama-agent >/dev/null; then
+    groupadd --system asama-agent
+fi
+if ! getent passwd asama-agent >/dev/null; then
+    useradd --system \
+        --gid asama-agent \
+        --no-create-home \
+        --shell /sbin/nologin \
+        asama-agent
+fi
+
+mkdir -p /opt/asama.ai/bin /opt/asama.ai/config
+chown asama-agent:asama-agent /opt/asama.ai/bin /opt/asama.ai/config
+chmod 750 /opt/asama.ai/bin /opt/asama.ai/config
+chown asama-agent:asama-agent /opt/asama.ai/bin/dcgm-exporter
+chmod 750 /opt/asama.ai/bin/dcgm-exporter
+for f in dcgm-counters-identity.csv dcgm-counters-health.csv dcgm-counters-analysis.csv \
+         dcgm-exporter-identity.env dcgm-exporter-health.env dcgm-exporter-analysis.env; do
+    chown asama-agent:asama-agent "/opt/asama.ai/config/${f}"
+    chmod 640 "/opt/asama.ai/config/${f}"
+done
+chown root:root /etc/systemd/system/asama-dcgm-exporter.service /etc/systemd/system/asama-dcgm-exporter@.service
+
+systemctl daemon-reload || echo "ERROR: Failed to reload systemd"
+
+INSTANCES="asama-dcgm-exporter.service asama-dcgm-exporter@health.service asama-dcgm-exporter@identity.service asama-dcgm-exporter@analysis.service"
+
+if ls /dev/nvidia[0-9]* >/dev/null 2>&1; then
+    echo "[INFO] NVIDIA GPU detected. Enabling asama-dcgm-exporter..."
+    systemctl enable $INSTANCES || echo "ERROR: Failed to enable dcgm-exporter services"
+    systemctl restart $INSTANCES || echo "ERROR: Failed to restart dcgm-exporter services"
+else
+    echo "[WARN] No NVIDIA GPU detected. Unit installed but start is gated by ConditionPathExistsGlob."
+    systemctl enable $INSTANCES >/dev/null 2>&1 || true
+fi

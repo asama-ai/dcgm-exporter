@@ -1,0 +1,20 @@
+# Format
+# If line starts with a '#' it is considered a comment
+# DCGM FIELD, Prometheus metric type, help message
+#
+# Identity only. Label rows attach to the carrier gauge (labels do not emit
+# metric families). Health/analysis CSVs omit these labels; join on UUID.
+
+# Carrier so label fields have a metric family to attach to.
+DCGM_FI_DEV_FB_TOTAL, gauge, Framebuffer memory total (in MiB).
+
+# Static configuration information. These appear as labels on the other metrics
+DCGM_FI_DRIVER_VERSION,        label, Driver Version
+DCGM_FI_NVML_VERSION,          label, NVML Version
+DCGM_FI_DEV_BRAND,             label, Device Brand
+DCGM_FI_DEV_SERIAL,            label, Device Serial Number
+DCGM_FI_DEV_OEM_INFOROM_VER,   label, OEM inforom version
+DCGM_FI_DEV_ECC_INFOROM_VER,   label, ECC inforom version
+DCGM_FI_DEV_POWER_INFOROM_VER, label, Power management object inforom version
+DCGM_FI_DEV_INFOROM_IMAGE_VER, label, Inforom image version
+DCGM_FI_DEV_VBIOS_VERSION,     label, VBIOS version of the device

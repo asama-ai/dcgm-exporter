@@ -1,0 +1,271 @@
+# Asama-only. Builds asama-dcgm-exporter. Does not replace go.yml.
+name: Publish asama-dcgm-exporter
+
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*-asama-*"
+      - "v[0-9]*.[0-9]*.[0-9]*-asama.*"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Pulp channel. Next N is computed from git tags for EXPORTER_VERSION."
+        type: choice
+        options:
+          - test
+          - production
+        default: test
+
+permissions:
+  contents: write
+  packages: read
+
+# One publish at a time so two manual runs cannot pick the same package number.
+concurrency:
+  group: publish-asama-dcgm-exporter
+  cancel-in-progress: false
+
+jobs:
+  package-and-publish:
+    runs-on: ubuntu-24.04
+    # A manual run pushes the release tag with the Actions token. Skip that
+    # follow-up tag push so the same version is not built twice.
+    if: github.event_name == 'workflow_dispatch' || github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Derive package versions
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force origin
+          # shellcheck disable=SC1091
+          source hack/versions.env
+          upstream="${EXPORTER_VERSION:?EXPORTER_VERSION missing from hack/versions.env}"
+
+          next_n() {
+            local max=0 n t
+            while read -r t; do
+              [ -z "$t" ] && continue
+              n="${t##*-}"
+              n="${n##*.}"
+              n=$((10#$n))
+              if [ "$n" -gt "$max" ]; then
+                max=$n
+              fi
+            done
+            printf '%03d' "$((max + 1))"
+          }
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            channel="${INPUT_CHANNEL}"
+            if [ "$channel" = test ]; then
+              asama_n="$(git tag -l "v${upstream}-asama-test-*" | next_n)"
+              raw="${upstream}-asama-test-${asama_n}"
+            elif [ "$channel" = production ]; then
+              asama_n="$(git tag -l "v${upstream}-asama-*" | { grep -E "^v${upstream}-asama[-.][0-9]+$" || true; } | next_n)"
+              raw="${upstream}-asama-${asama_n}"
+            else
+              echo "ERROR: channel must be test or production"
+              exit 1
+            fi
+            tag="v${raw}"
+          else
+            tag="${GITHUB_REF_NAME}"
+            raw="${tag#v}"
+            # Match -asama-test- before -asama- so "test" is a channel, not a build number.
+            if [[ "$raw" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-asama-test[-.]([0-9]+)$ ]]; then
+              upstream="${BASH_REMATCH[1]}"
+              asama_n="$(printf '%03d' "$((10#${BASH_REMATCH[2]}))")"
+              channel=test
+            elif [[ "$raw" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-asama[-.]([0-9]+)$ ]]; then
+              upstream="${BASH_REMATCH[1]}"
+              asama_n="$(printf '%03d' "$((10#${BASH_REMATCH[2]}))")"
+              channel=production
+            else
+              echo "ERROR: version '$raw' must be X.Y.Z-asama-test-N (testing) or X.Y.Z-asama-N (production)"
+              echo "example git tags: v${upstream}-asama-test-001  v${upstream}-asama-001"
+              exit 1
+            fi
+          fi
+
+          # Debian: one hyphen (upstream - revision). RPM Version cannot contain '-'.
+          # Same Pulp repos as host-agent. Test vs production is the apt component
+          # (test/main) and the rpm repo (rpm-test/rpm), not a separate repository name.
+          echo "DEB_REPOSITORY=deb" >> "$GITHUB_ENV"
+          echo "DEB_SUITE=generic" >> "$GITHUB_ENV"
+          if [ "$channel" = test ]; then
+            rev="asama.test.${asama_n}"
+            echo "DEB_COMPONENT=test" >> "$GITHUB_ENV"
+            echo "RPM_REPOSITORY=rpm-test" >> "$GITHUB_ENV"
+          else
+            rev="asama.${asama_n}"
+            echo "DEB_COMPONENT=main" >> "$GITHUB_ENV"
+            echo "RPM_REPOSITORY=rpm" >> "$GITHUB_ENV"
+          fi
+          echo "RELEASE_TAG=${tag}" >> "$GITHUB_ENV"
+          echo "DEB_VERSION=${upstream}-${rev}" >> "$GITHUB_ENV"
+          echo "RPM_VERSION=${upstream}" >> "$GITHUB_ENV"
+          echo "RPM_RELEASE=${rev}" >> "$GITHUB_ENV"
+          echo "Publishing ${tag} channel=${channel} deb=${upstream}-${rev}-1"
+
+      - name: Reserve release tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          # Claim the computed tag before the build so a later run cannot reuse it.
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null; then
+            echo "ERROR: tag ${RELEASE_TAG} already exists"
+            exit 1
+          fi
+          git tag "${RELEASE_TAG}"
+          git push origin "refs/tags/${RELEASE_TAG}"
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26.4"
+          cache: true
+
+      - name: Install package tooling
+        run: sudo apt-get update && sudo apt-get install -y rpm gnupg python3-pip binutils
+
+      - name: create build directory
+        run: mkdir -p build/bin
+
+      - name: Build DCGM Exporter
+        run: |
+          set -euo pipefail
+          go mod verify
+          make binary
+          mv cmd/dcgm-exporter/dcgm-exporter build/bin/
+          ./build/bin/dcgm-exporter --version
+          asama-packaging/scripts/asama_strip_dcgm.sh "${GITHUB_WORKSPACE}"
+
+      - name: Prepare dcgm-exporter DEB package
+        run: |
+          set -euo pipefail
+          DEB_DIR="deb/asama-dcgm-exporter_${DEB_VERSION}-1_amd64"
+          asama-packaging/deb/make-deb.sh "$DEB_DIR"
+          mkdir -p "$DEB_DIR/DEBIAN"
+          cp asama-packaging/deb/postinst "$DEB_DIR/DEBIAN/postinst"
+          cp asama-packaging/deb/prerm "$DEB_DIR/DEBIAN/prerm"
+          chmod 0755 "$DEB_DIR/DEBIAN/postinst" "$DEB_DIR/DEBIAN/prerm"
+          sed "s/_VERSION_/${DEB_VERSION}-1/" asama-packaging/deb/control > "$DEB_DIR/DEBIAN/control"
+          # Files under /opt are not conffiles unless listed. Keep operator edits on upgrade.
+          # Paths stay unindented in the package file. A heredoc here would break workflow YAML.
+          printf '%s\n' \
+            /opt/asama.ai/config/dcgm-counters-identity.csv \
+            /opt/asama.ai/config/dcgm-counters-health.csv \
+            /opt/asama.ai/config/dcgm-counters-analysis.csv \
+            /opt/asama.ai/config/dcgm-exporter-identity.env \
+            /opt/asama.ai/config/dcgm-exporter-health.env \
+            /opt/asama.ai/config/dcgm-exporter-analysis.env \
+            > "$DEB_DIR/DEBIAN/conffiles"
+
+      - name: Build dcgm-exporter DEB
+        run: dpkg-deb --build "deb/asama-dcgm-exporter_${DEB_VERSION}-1_amd64"
+
+      - name: Prepare and build DCGM RPM
+        run: |
+          set -euo pipefail
+          mkdir -p ~/rpmbuild/{SPECS,SOURCES,BUILD,RPMS,SRPMS}
+          cp build/bin/dcgm-exporter ~/rpmbuild/SOURCES/
+          cp asama-packaging/systemd/asama-dcgm-exporter.service ~/rpmbuild/SOURCES/
+          cp asama-packaging/systemd/asama-dcgm-exporter@.service ~/rpmbuild/SOURCES/
+          cp asama-packaging/config/dcgm-counters-*.csv asama-packaging/config/dcgm-exporter-*.env ~/rpmbuild/SOURCES/
+          sed -e "s/_RPM_VERSION_/${RPM_VERSION}/" -e "s/_RPM_RELEASE_/${RPM_RELEASE}/" \
+            asama-packaging/rpm/asama-dcgm-exporter.spec > ~/rpmbuild/SPECS/asama-dcgm-exporter.spec
+          (cd ~/rpmbuild/SPECS && rpmbuild -ba asama-dcgm-exporter.spec)
+          rpm -qlp ~/rpmbuild/RPMS/x86_64/asama-dcgm-exporter-${RPM_VERSION}-${RPM_RELEASE}*.x86_64.rpm
+
+      - name: Configure RPM signing
+        env:
+          RPM_GPG_PRIVATE_KEY: ${{ secrets.RPM_GPG_PRIVATE_KEY || secrets.GPG_PRIVATE_KEY }}
+          RPM_GPG_NAME: ${{ secrets.RPM_GPG_NAME || secrets.GPG_NAME }}
+        run: |
+          if [ -z "${RPM_GPG_PRIVATE_KEY:-}" ]; then
+            echo "No RPM GPG key in this repo secrets; skip signing"
+            exit 0
+          fi
+          asama-packaging/scripts/configure-rpm-signing.sh
+          find ~/rpmbuild/RPMS -name '*.rpm' -print0 | xargs -0 -r -n1 rpmsign --addsign
+          find ~/rpmbuild/RPMS -name '*.rpm' -print0 | xargs -0 -r -n1 sudo rpm --checksig
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: asama-dcgm-exporter-packages
+          path: |
+            deb/asama-dcgm-exporter_${{ env.DEB_VERSION }}-1_amd64.deb
+            /home/runner/rpmbuild/RPMS/x86_64/asama-dcgm-exporter-${{ env.RPM_VERSION }}-${{ env.RPM_RELEASE }}*.x86_64.rpm
+
+      - name: Resolve Pulp remote user
+        env:
+          PUSHER_EMAIL: ${{ github.event.pusher.email }}
+          HEAD_AUTHOR_EMAIL: ${{ github.event.head_commit.author.email }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Email comes from GitHub, never from a repo secret.
+          # Tag pushes use the pusher address. Manual runs fall through to
+          # the actor's public profile, then the commit author GitHub recorded.
+          email="${PUSHER_EMAIL:-}"
+          if [ -z "$email" ]; then
+            email="${HEAD_AUTHOR_EMAIL:-}"
+          fi
+          if [ -z "$email" ]; then
+            email="$(gh api "users/${GITHUB_ACTOR}" --jq '.email // empty' || true)"
+          fi
+          if [ -z "$email" ]; then
+            email="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" --jq '.commit.author.email // empty' || true)"
+          fi
+          if [ -z "$email" ] || [ "$email" = "null" ]; then
+            echo "ERROR: GitHub did not provide a publisher email" >&2
+            exit 1
+          fi
+          echo "PULP_REMOTE_USER=${email}" >> "$GITHUB_ENV"
+          echo "PULP_USER_EMAIL=${email}" >> "$GITHUB_ENV"
+          echo "PULP_GITHUB_ACTOR=${GITHUB_ACTOR}" >> "$GITHUB_ENV"
+
+      - name: Install and configure Pulp CLI
+        env:
+          PULP_BASE_URL: ${{ secrets.PULP_BASE_URL }}
+        run: |
+          if [ -z "${PULP_BASE_URL:-}" ]; then
+            echo "PULP_BASE_URL is unset; skip Pulp"
+            exit 0
+          fi
+          # RPM CLI lives in pulp-cli; pulp-cli-rpm is not published on PyPI.
+          python3 -m pip install --user pulp-cli==0.40.6 pulp-cli-deb tomli-w
+          asama-packaging/scripts/configure-pulp-cli.sh
+
+      - name: Upload and publish packages in Pulp
+        env:
+          PULP_DEB_SIGNING_SERVICE: ${{ secrets.PULP_DEB_SIGNING_SERVICE || 'asama-deb-signer' }}
+          PULP_BASE_URL: ${{ secrets.PULP_BASE_URL }}
+        run: |
+          if [ -z "${PULP_BASE_URL:-}" ]; then
+            echo "PULP_BASE_URL is unset; skip Pulp upload"
+            exit 0
+          fi
+          asama-packaging/scripts/pulp-asama.sh deb content upload \
+            --repository "$DEB_REPOSITORY" \
+            --file "deb/asama-dcgm-exporter_${DEB_VERSION}-1_amd64.deb" \
+            --distribution "$DEB_SUITE" \
+            --component "$DEB_COMPONENT"
+          asama-packaging/scripts/pulp-asama.sh deb publication create --repository "$DEB_REPOSITORY" --signing-service "$PULP_DEB_SIGNING_SERVICE"
+          find ~/rpmbuild/RPMS -name 'asama-dcgm-exporter-*.rpm' -print0 | xargs -0 -r -n1 -I{} asama-packaging/scripts/pulp-asama.sh rpm content upload --repository "$RPM_REPOSITORY" --file '{}'
+          asama-packaging/scripts/pulp-asama.sh rpm publication create --repository "$RPM_REPOSITORY"
+
+      - name: Attach artifacts to the GitHub release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          files: |
+            deb/asama-dcgm-exporter_${{ env.DEB_VERSION }}-1_amd64.deb
+            /home/runner/rpmbuild/RPMS/x86_64/asama-dcgm-exporter-${{ env.RPM_VERSION }}-${{ env.RPM_RELEASE }}*.x86_64.rpm

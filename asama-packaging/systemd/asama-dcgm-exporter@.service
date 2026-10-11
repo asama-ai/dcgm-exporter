@@ -1,0 +1,28 @@
+[Unit]
+Description=Asama AI DCGM Exporter (%i)
+Documentation=https://github.com/asama-ai/dcgm-exporter
+After=network.target asama-dcgm-exporter@health.service
+PartOf=asama-dcgm-exporter.service
+ConditionPathExistsGlob=/dev/nvidia[0-9]*
+
+[Service]
+Type=simple
+User=asama-agent
+Group=asama-agent
+EnvironmentFile=/opt/asama.ai/config/dcgm-exporter-%i.env
+ExecStart=/opt/asama.ai/bin/dcgm-exporter
+Restart=always
+RestartSec=10
+Slice=asama.slice
+
+# Security
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ReadOnlyDirectories=/
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=asama-dcgm-exporter.service
