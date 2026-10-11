@@ -161,14 +161,15 @@ jobs:
           chmod 0755 "$DEB_DIR/DEBIAN/postinst" "$DEB_DIR/DEBIAN/prerm"
           sed "s/_VERSION_/${DEB_VERSION}-1/" asama-packaging/deb/control > "$DEB_DIR/DEBIAN/control"
           # Files under /opt are not conffiles unless listed. Keep operator edits on upgrade.
-          cat > "$DEB_DIR/DEBIAN/conffiles" <<'EOF'
-/opt/asama.ai/config/dcgm-counters-identity.csv
-/opt/asama.ai/config/dcgm-counters-health.csv
-/opt/asama.ai/config/dcgm-counters-analysis.csv
-/opt/asama.ai/config/dcgm-exporter-identity.env
-/opt/asama.ai/config/dcgm-exporter-health.env
-/opt/asama.ai/config/dcgm-exporter-analysis.env
-EOF
+          # Paths stay unindented in the package file. A heredoc here would break workflow YAML.
+          printf '%s\n' \
+            /opt/asama.ai/config/dcgm-counters-identity.csv \
+            /opt/asama.ai/config/dcgm-counters-health.csv \
+            /opt/asama.ai/config/dcgm-counters-analysis.csv \
+            /opt/asama.ai/config/dcgm-exporter-identity.env \
+            /opt/asama.ai/config/dcgm-exporter-health.env \
+            /opt/asama.ai/config/dcgm-exporter-analysis.env \
+            > "$DEB_DIR/DEBIAN/conffiles"
 
       - name: Build dcgm-exporter DEB
         run: dpkg-deb --build "deb/asama-dcgm-exporter_${DEB_VERSION}-1_amd64"
