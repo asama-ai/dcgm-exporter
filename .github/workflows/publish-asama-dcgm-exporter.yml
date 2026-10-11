@@ -20,22 +20,32 @@ permissions:
   contents: write
   packages: read
 
+# One publish at a time so two manual runs cannot pick the same package number.
+concurrency:
+  group: publish-asama-dcgm-exporter
+  cancel-in-progress: false
+
 jobs:
   package-and-publish:
     runs-on: ubuntu-24.04
+    # A manual run pushes the release tag with the Actions token. Skip that
+    # follow-up tag push so the same version is not built twice.
+    if: github.event_name == 'workflow_dispatch' || github.actor != 'github-actions[bot]'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
 
       - name: Derive package versions
         env:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_CHANNEL: ${{ inputs.channel }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git fetch --tags --force origin
+          git -c "http.extraheader=AUTHORIZATION: bearer ${GH_TOKEN}" fetch --tags --force origin
           # shellcheck disable=SC1091
           source hack/versions.env
           upstream="${EXPORTER_VERSION:?EXPORTER_VERSION missing from hack/versions.env}"
@@ -106,7 +116,21 @@ jobs:
           echo "RPM_RELEASE=${rev}" >> "$GITHUB_ENV"
           echo "Publishing ${tag} channel=${channel} deb=${upstream}-${rev}-1"
 
-      - uses: actions/setup-go@v5
+      - name: Reserve release tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Claim the computed tag before the build so a later run cannot reuse it.
+          if git -c "http.extraheader=AUTHORIZATION: bearer ${GH_TOKEN}" ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null; then
+            echo "ERROR: tag ${RELEASE_TAG} already exists"
+            exit 1
+          fi
+          git tag "${RELEASE_TAG}"
+          git -c "http.extraheader=AUTHORIZATION: bearer ${GH_TOKEN}" push origin "refs/tags/${RELEASE_TAG}"
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: "1.26.4"
           cache: true
@@ -120,7 +144,6 @@ jobs:
       - name: Build DCGM Exporter
         run: |
           set -euo pipefail
-          go mod tidy
           go mod verify
           make binary
           mv cmd/dcgm-exporter/dcgm-exporter build/bin/
@@ -137,6 +160,15 @@ jobs:
           cp asama-packaging/deb/prerm "$DEB_DIR/DEBIAN/prerm"
           chmod 0755 "$DEB_DIR/DEBIAN/postinst" "$DEB_DIR/DEBIAN/prerm"
           sed "s/_VERSION_/${DEB_VERSION}-1/" asama-packaging/deb/control > "$DEB_DIR/DEBIAN/control"
+          # Files under /opt are not conffiles unless listed. Keep operator edits on upgrade.
+          cat > "$DEB_DIR/DEBIAN/conffiles" <<'EOF'
+/opt/asama.ai/config/dcgm-counters-identity.csv
+/opt/asama.ai/config/dcgm-counters-health.csv
+/opt/asama.ai/config/dcgm-counters-analysis.csv
+/opt/asama.ai/config/dcgm-exporter-identity.env
+/opt/asama.ai/config/dcgm-exporter-health.env
+/opt/asama.ai/config/dcgm-exporter-analysis.env
+EOF
 
       - name: Build dcgm-exporter DEB
         run: dpkg-deb --build "deb/asama-dcgm-exporter_${DEB_VERSION}-1_amd64"
@@ -168,7 +200,7 @@ jobs:
           find ~/rpmbuild/RPMS -name '*.rpm' -print0 | xargs -0 -r -n1 sudo rpm --checksig
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: asama-dcgm-exporter-packages
           path: |
@@ -233,7 +265,7 @@ jobs:
           asama-packaging/scripts/pulp-asama.sh rpm publication create --repository "$RPM_REPOSITORY"
 
       - name: Attach artifacts to the GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
