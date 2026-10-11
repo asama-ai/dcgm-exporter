@@ -36,16 +36,14 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
-          persist-credentials: false
 
       - name: Derive package versions
         env:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_CHANNEL: ${{ inputs.channel }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git -c "http.extraheader=AUTHORIZATION: bearer ${GH_TOKEN}" fetch --tags --force origin
+          git fetch --tags --force origin
           # shellcheck disable=SC1091
           source hack/versions.env
           upstream="${EXPORTER_VERSION:?EXPORTER_VERSION missing from hack/versions.env}"
@@ -118,17 +116,15 @@ jobs:
 
       - name: Reserve release tag
         if: github.event_name == 'workflow_dispatch'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           # Claim the computed tag before the build so a later run cannot reuse it.
-          if git -c "http.extraheader=AUTHORIZATION: bearer ${GH_TOKEN}" ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null; then
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null; then
             echo "ERROR: tag ${RELEASE_TAG} already exists"
             exit 1
           fi
           git tag "${RELEASE_TAG}"
-          git -c "http.extraheader=AUTHORIZATION: bearer ${GH_TOKEN}" push origin "refs/tags/${RELEASE_TAG}"
+          git push origin "refs/tags/${RELEASE_TAG}"
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
