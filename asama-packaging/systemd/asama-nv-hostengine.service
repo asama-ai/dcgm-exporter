@@ -1,0 +1,15 @@
+[Unit]
+Description=Asama AI NVIDIA host engine
+Documentation=https://github.com/asama-ai/dcgm-exporter
+After=network.target
+ConditionPathExists=/usr/bin/nv-hostengine
+ConditionPathExistsGlob=/dev/nvidia[0-9]*
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/nv-hostengine -n -b 127.0.0.1 -p 5555
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
