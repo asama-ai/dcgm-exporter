@@ -3,8 +3,8 @@
 # The API returns /pulp/api/v3 hrefs; those are joined onto the repository base.
 set -euo pipefail
 
-: "${PULP_USERNAME:?PULP_USERNAME is required}"
-: "${PULP_PASSWORD:?PULP_PASSWORD is required}"
+: "${ASAMA_REPO_USERNAME:?ASAMA_REPO_USERNAME is required}"
+: "${ASAMA_REPO_PASSWORD:?ASAMA_REPO_PASSWORD is required}"
 
 kind="${1:-}"
 repository="${2:-}"
@@ -22,7 +22,7 @@ if [[ "$kind" == "deb" && ( -z "$distribution" || -z "$component" ) ]]; then
 fi
 
 api="https://console.asama.cloud/pulp-publish/api/v3"
-auth=(curl -sS --fail-with-body --connect-timeout 15 --max-time 30 --user "${PULP_USERNAME}:${PULP_PASSWORD}")
+auth=(curl -sS --fail-with-body --connect-timeout 15 --max-time 30 --user "${ASAMA_REPO_USERNAME}:${ASAMA_REPO_PASSWORD}")
 deb_signing_service="asama-deb-signer"
 
 wait_task() {
