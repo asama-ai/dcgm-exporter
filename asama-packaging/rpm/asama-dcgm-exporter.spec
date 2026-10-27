@@ -31,7 +31,8 @@ Recommends:     asama-host-agent
 NVIDIA DCGM metrics exporter for Asama Host Agent.
 Install on hosts with NVIDIA GPUs alongside asama-host-agent.
 Runs identity/health/analysis instances against one nv-hostengine.
-Uses an engine that is already running, otherwise starts asama-nv-hostengine on 127.0.0.1:5555.
+Uses a listening engine, otherwise starts asama-nv-hostengine on 127.0.0.1:5555.
+Leaves an operator-set DCGM_REMOTE_HOSTENGINE_INFO unchanged when it is not that default.
 
 %prep
 # Nothing to do here - using direct binary files
@@ -86,7 +87,7 @@ fi
 
 %post
 systemctl daemon-reload || echo "ERROR: Failed to reload systemd"
-/opt/asama.ai/libexec/asama-dcgm-configure-hostengine || echo "ERROR: Failed to configure nv-hostengine"
+/opt/asama.ai/libexec/asama-dcgm-configure-hostengine || { echo "ERROR: Failed to configure nv-hostengine" >&2; exit 1; }
 
 if ls /dev/nvidia[0-9]* >/dev/null 2>&1; then
     echo "[INFO] NVIDIA GPU detected. Enabling asama-dcgm-exporter..."

@@ -31,7 +31,7 @@ chown root:root \
 chmod 755 /opt/asama.ai/libexec/asama-dcgm-configure-hostengine
 
 systemctl daemon-reload || echo "ERROR: Failed to reload systemd"
-/opt/asama.ai/libexec/asama-dcgm-configure-hostengine || echo "ERROR: Failed to configure nv-hostengine"
+/opt/asama.ai/libexec/asama-dcgm-configure-hostengine || { echo "ERROR: Failed to configure nv-hostengine" >&2; exit 1; }
 
 INSTANCES="asama-dcgm-exporter.service asama-dcgm-exporter@health.service asama-dcgm-exporter@identity.service asama-dcgm-exporter@analysis.service"
 
