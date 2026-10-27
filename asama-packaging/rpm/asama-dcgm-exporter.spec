@@ -27,7 +27,7 @@ Recommends:     asama-host-agent
 %description
 NVIDIA DCGM metrics exporter for Asama Host Agent.
 Install on hosts with NVIDIA GPUs alongside asama-host-agent.
-Runs identity/health/analysis instances against one embedded hostengine.
+Runs identity/health/analysis instances against nv-hostengine at 127.0.0.1:5555.
 
 %prep
 # Nothing to do here - using direct binary files

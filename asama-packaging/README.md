@@ -9,18 +9,15 @@ It builds `asama-dcgm-exporter` (identity / health / analysis instances, Asama c
 
 `EXPORTER_VERSION` in `hack/versions.env` is **4.8.3** on this pin.
 
-Do not pick a number. In Actions, run **Publish asama-dcgm-exporter** on the branch you want, choose **test** or **production**. The workflow reads existing git tags and uses the next `N` (`001`, `002`, …).
-
-That creates:
+The git tag is the Asama version. Upstream comes from `EXPORTER_VERSION` at that commit. The package name is `asama-dcgm-exporter`, so the version does not repeat `asama`.
 
 ```text
-v4.8.3-asama-test-N   # testing Pulp
-v4.8.3-asama-N        # production Pulp
+v1.2.3         # production
+v1.2.3-test1   # testing
 ```
 
-Debian `Version` uses one hyphen (`4.8.3-asama.test.N` / `4.8.3-asama.N`).
-RPM `Version` is `4.8.3`; `Release` is `asama.test.N` or `asama.N`.
+With `EXPORTER_VERSION=4.8.3`, those become Debian `4.8.3-1.2.3-1` and `4.8.3-1.2.3-test1-1`. RPM `Version` is `4.8.3`. RPM `Release` is `1.2.3` or `1.2.3.test1`.
 
-Pushing a numbered tag still works if you need to pin `N` by hand.
+A manual run takes the same Asama version (`1.2.3` or `1.2.3-test1`) and pushes that tag.
 
 Workflow: `.github/workflows/publish-asama-dcgm-exporter.yml`

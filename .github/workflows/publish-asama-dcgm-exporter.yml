@@ -4,23 +4,19 @@ name: Publish asama-dcgm-exporter
 on:
   push:
     tags:
-      - "v[0-9]*.[0-9]*.[0-9]*-asama-*"
-      - "v[0-9]*.[0-9]*.[0-9]*-asama.*"
+      - "v[0-9]*.[0-9]*.[0-9]*"
+      - "v[0-9]*.[0-9]*.[0-9]*-test[0-9]*"
   workflow_dispatch:
     inputs:
-      channel:
-        description: "Pulp channel. Next N is computed from git tags for EXPORTER_VERSION."
-        type: choice
-        options:
-          - test
-          - production
-        default: test
+      version:
+        description: "Asama version: X.Y.Z or X.Y.Z-testN. Upstream comes from EXPORTER_VERSION in hack/versions.env."
+        required: true
 
 permissions:
   contents: write
   packages: read
 
-# One publish at a time so two manual runs cannot pick the same package number.
+# One publish at a time.
 concurrency:
   group: publish-asama-dcgm-exporter
   cancel-in-progress: false
@@ -40,7 +36,7 @@ jobs:
       - name: Derive package versions
         env:
           EVENT_NAME: ${{ github.event_name }}
-          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           git fetch --tags --force origin
@@ -48,77 +44,50 @@ jobs:
           source hack/versions.env
           upstream="${EXPORTER_VERSION:?EXPORTER_VERSION missing from hack/versions.env}"
 
-          next_n() {
-            local max=0 n t
-            while read -r t; do
-              [ -z "$t" ] && continue
-              n="${t##*-}"
-              n="${n##*.}"
-              n=$((10#$n))
-              if [ "$n" -gt "$max" ]; then
-                max=$n
-              fi
-            done
-            printf '%03d' "$((max + 1))"
-          }
-
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            channel="${INPUT_CHANNEL}"
-            if [ "$channel" = test ]; then
-              asama_n="$(git tag -l "v${upstream}-asama-test-*" | next_n)"
-              raw="${upstream}-asama-test-${asama_n}"
-            elif [ "$channel" = production ]; then
-              asama_n="$(git tag -l "v${upstream}-asama-*" | { grep -E "^v${upstream}-asama[-.][0-9]+$" || true; } | next_n)"
-              raw="${upstream}-asama-${asama_n}"
-            else
-              echo "ERROR: channel must be test or production"
-              exit 1
-            fi
-            tag="v${raw}"
+            version="$INPUT_VERSION"
+            tag="v${version}"
           else
             tag="${GITHUB_REF_NAME}"
-            raw="${tag#v}"
-            # Match -asama-test- before -asama- so "test" is a channel, not a build number.
-            if [[ "$raw" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-asama-test[-.]([0-9]+)$ ]]; then
-              upstream="${BASH_REMATCH[1]}"
-              asama_n="$(printf '%03d' "$((10#${BASH_REMATCH[2]}))")"
-              channel=test
-            elif [[ "$raw" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-asama[-.]([0-9]+)$ ]]; then
-              upstream="${BASH_REMATCH[1]}"
-              asama_n="$(printf '%03d' "$((10#${BASH_REMATCH[2]}))")"
-              channel=production
-            else
-              echo "ERROR: version '$raw' must be X.Y.Z-asama-test-N (testing) or X.Y.Z-asama-N (production)"
-              echo "example git tags: v${upstream}-asama-test-001  v${upstream}-asama-001"
-              exit 1
-            fi
+            version="${tag#v}"
+          fi
+          # Tag is the Asama version. Upstream is EXPORTER_VERSION from this commit.
+          if [[ ! "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)(-test([0-9]+))?$ ]]; then
+            echo "ERROR: version '$version' must be X.Y.Z or X.Y.Z-testN (tag ${tag})"
+            exit 1
+          fi
+          asama="${BASH_REMATCH[1]}"
+          if [[ -n "${BASH_REMATCH[2]}" ]]; then
+            channel=test
+            asama_full="${asama}-test${BASH_REMATCH[3]}"
+          else
+            channel=production
+            asama_full="$asama"
           fi
 
-          # Debian: one hyphen (upstream - revision). RPM Version cannot contain '-'.
-          # Same Pulp repos as host-agent. Test vs production is the apt component
-          # (test/main) and the rpm repo (rpm-test/rpm), not a separate repository name.
+          # Package name is asama-dcgm-exporter. Version is upstream plus the Asama
+          # version. Debian revision stays -1. RPM Release cannot contain '-'.
+          # Test vs production is the apt component and the rpm repo.
           echo "DEB_REPOSITORY=deb" >> "$GITHUB_ENV"
           echo "DEB_SUITE=generic" >> "$GITHUB_ENV"
           if [ "$channel" = test ]; then
-            rev="asama.test.${asama_n}"
             echo "DEB_COMPONENT=test" >> "$GITHUB_ENV"
             echo "RPM_REPOSITORY=rpm-test" >> "$GITHUB_ENV"
           else
-            rev="asama.${asama_n}"
             echo "DEB_COMPONENT=main" >> "$GITHUB_ENV"
             echo "RPM_REPOSITORY=rpm" >> "$GITHUB_ENV"
           fi
           echo "RELEASE_TAG=${tag}" >> "$GITHUB_ENV"
-          echo "DEB_VERSION=${upstream}-${rev}" >> "$GITHUB_ENV"
+          echo "DEB_VERSION=${upstream}-${asama_full}" >> "$GITHUB_ENV"
           echo "RPM_VERSION=${upstream}" >> "$GITHUB_ENV"
-          echo "RPM_RELEASE=${rev}" >> "$GITHUB_ENV"
-          echo "Publishing ${tag} channel=${channel} deb=${upstream}-${rev}-1"
+          echo "RPM_RELEASE=${asama_full//-/.}" >> "$GITHUB_ENV"
+          echo "Publishing ${tag} upstream=${upstream} deb=${upstream}-${asama_full}-1"
 
       - name: Reserve release tag
         if: github.event_name == 'workflow_dispatch'
         run: |
           set -euo pipefail
-          # Claim the computed tag before the build so a later run cannot reuse it.
+          # Claim the tag before the build so a later run cannot reuse it.
           if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null; then
             echo "ERROR: tag ${RELEASE_TAG} already exists"
             exit 1
@@ -132,7 +101,7 @@ jobs:
           cache: true
 
       - name: Install package tooling
-        run: sudo apt-get update && sudo apt-get install -y rpm gnupg python3-pip binutils
+        run: sudo apt-get update && sudo apt-get install -y rpm gnupg binutils jq
 
       - name: create build directory
         run: mkdir -p build/bin
@@ -204,62 +173,22 @@ jobs:
             deb/asama-dcgm-exporter_${{ env.DEB_VERSION }}-1_amd64.deb
             /home/runner/rpmbuild/RPMS/x86_64/asama-dcgm-exporter-${{ env.RPM_VERSION }}-${{ env.RPM_RELEASE }}*.x86_64.rpm
 
-      - name: Resolve Pulp remote user
+      - name: Upload packages to existing repositories
         env:
-          PUSHER_EMAIL: ${{ github.event.pusher.email }}
-          HEAD_AUTHOR_EMAIL: ${{ github.event.head_commit.author.email }}
-          GH_TOKEN: ${{ github.token }}
+          ASAMA_REPO_USERNAME: ${{ secrets.ASAMA_REPO_USERNAME }}
+          ASAMA_REPO_PASSWORD: ${{ secrets.ASAMA_REPO_PASSWORD }}
         run: |
-          # Email comes from GitHub, never from a repo secret.
-          # Tag pushes use the pusher address. Manual runs fall through to
-          # the actor's public profile, then the commit author GitHub recorded.
-          email="${PUSHER_EMAIL:-}"
-          if [ -z "$email" ]; then
-            email="${HEAD_AUTHOR_EMAIL:-}"
-          fi
-          if [ -z "$email" ]; then
-            email="$(gh api "users/${GITHUB_ACTOR}" --jq '.email // empty' || true)"
-          fi
-          if [ -z "$email" ]; then
-            email="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}" --jq '.commit.author.email // empty' || true)"
-          fi
-          if [ -z "$email" ] || [ "$email" = "null" ]; then
-            echo "ERROR: GitHub did not provide a publisher email" >&2
+          # deb, rpm, and rpm-test already exist. Upload, then publish.
+          shopt -s nullglob
+          rpms=(/home/runner/rpmbuild/RPMS/x86_64/asama-dcgm-exporter-"${RPM_VERSION}"-"${RPM_RELEASE}"*.x86_64.rpm)
+          if [ "${#rpms[@]}" -ne 1 ]; then
+            echo "expected one rpm, found ${#rpms[@]}" >&2
             exit 1
           fi
-          echo "PULP_REMOTE_USER=${email}" >> "$GITHUB_ENV"
-          echo "PULP_USER_EMAIL=${email}" >> "$GITHUB_ENV"
-          echo "PULP_GITHUB_ACTOR=${GITHUB_ACTOR}" >> "$GITHUB_ENV"
-
-      - name: Install and configure Pulp CLI
-        env:
-          PULP_BASE_URL: ${{ secrets.PULP_BASE_URL }}
-        run: |
-          if [ -z "${PULP_BASE_URL:-}" ]; then
-            echo "PULP_BASE_URL is unset; skip Pulp"
-            exit 0
-          fi
-          # RPM CLI lives in pulp-cli; pulp-cli-rpm is not published on PyPI.
-          python3 -m pip install --user pulp-cli==0.40.6 pulp-cli-deb tomli-w
-          asama-packaging/scripts/configure-pulp-cli.sh
-
-      - name: Upload and publish packages in Pulp
-        env:
-          PULP_DEB_SIGNING_SERVICE: ${{ secrets.PULP_DEB_SIGNING_SERVICE || 'asama-deb-signer' }}
-          PULP_BASE_URL: ${{ secrets.PULP_BASE_URL }}
-        run: |
-          if [ -z "${PULP_BASE_URL:-}" ]; then
-            echo "PULP_BASE_URL is unset; skip Pulp upload"
-            exit 0
-          fi
-          asama-packaging/scripts/pulp-asama.sh deb content upload \
-            --repository "$DEB_REPOSITORY" \
-            --file "deb/asama-dcgm-exporter_${DEB_VERSION}-1_amd64.deb" \
-            --distribution "$DEB_SUITE" \
-            --component "$DEB_COMPONENT"
-          asama-packaging/scripts/pulp-asama.sh deb publication create --repository "$DEB_REPOSITORY" --signing-service "$PULP_DEB_SIGNING_SERVICE"
-          find ~/rpmbuild/RPMS -name 'asama-dcgm-exporter-*.rpm' -print0 | xargs -0 -r -n1 -I{} asama-packaging/scripts/pulp-asama.sh rpm content upload --repository "$RPM_REPOSITORY" --file '{}'
-          asama-packaging/scripts/pulp-asama.sh rpm publication create --repository "$RPM_REPOSITORY"
+          asama-packaging/scripts/repo-upload.sh deb "$DEB_REPOSITORY" \
+            "deb/asama-dcgm-exporter_${DEB_VERSION}-1_amd64.deb" \
+            "$DEB_SUITE" "$DEB_COMPONENT"
+          asama-packaging/scripts/repo-upload.sh rpm "$RPM_REPOSITORY" "${rpms[0]}"
 
       - name: Attach artifacts to the GitHub release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
