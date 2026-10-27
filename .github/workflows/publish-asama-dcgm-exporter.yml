@@ -57,17 +57,19 @@ jobs:
             exit 1
           fi
           asama="${BASH_REMATCH[1]}"
+          # ~ sorts before the final release in dpkg and RPM. A bare tilde is a home path.
+          tilde='~'
           if [[ -n "${BASH_REMATCH[2]}" ]]; then
             channel=test
-            asama_full="${asama}-test${BASH_REMATCH[3]}"
+            asama_full="${asama}${tilde}test${BASH_REMATCH[3]}"
           else
             channel=production
             asama_full="$asama"
           fi
 
           # Package name is asama-dcgm-exporter. Version is upstream plus the Asama
-          # version. Debian revision stays -1. RPM Release cannot contain '-'.
-          # Test vs production is the apt component and the rpm repo.
+          # version. Debian revision stays -1. Test vs production is the apt component
+          # and the rpm repo.
           echo "DEB_REPOSITORY=deb" >> "$GITHUB_ENV"
           echo "DEB_SUITE=generic" >> "$GITHUB_ENV"
           if [ "$channel" = test ]; then
@@ -80,7 +82,7 @@ jobs:
           echo "RELEASE_TAG=${tag}" >> "$GITHUB_ENV"
           echo "DEB_VERSION=${upstream}-${asama_full}" >> "$GITHUB_ENV"
           echo "RPM_VERSION=${upstream}" >> "$GITHUB_ENV"
-          echo "RPM_RELEASE=${asama_full//-/.}" >> "$GITHUB_ENV"
+          echo "RPM_RELEASE=${asama_full}" >> "$GITHUB_ENV"
           echo "Publishing ${tag} upstream=${upstream} deb=${upstream}-${asama_full}-1"
 
       - name: Reserve release tag

@@ -16,7 +16,7 @@ v1.2.3         # production
 v1.2.3-test1   # testing
 ```
 
-With `EXPORTER_VERSION=4.8.3`, those become Debian `4.8.3-1.2.3-1` and `4.8.3-1.2.3-test1-1`. RPM `Version` is `4.8.3`. RPM `Release` is `1.2.3` or `1.2.3.test1`.
+With `EXPORTER_VERSION=4.8.3`, those become Debian `4.8.3-1.2.3-1` and `4.8.3-1.2.3~test1-1`. RPM `Version` is `4.8.3`. RPM `Release` is `1.2.3` or `1.2.3~test1`. The `~` makes the test build sort before that same release.
 
 A manual run takes the same Asama version (`1.2.3` or `1.2.3-test1`) and pushes that tag.
 
