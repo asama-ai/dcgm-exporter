@@ -148,6 +148,8 @@ jobs:
           cp build/bin/dcgm-exporter ~/rpmbuild/SOURCES/
           cp asama-packaging/systemd/asama-dcgm-exporter.service ~/rpmbuild/SOURCES/
           cp asama-packaging/systemd/asama-dcgm-exporter@.service ~/rpmbuild/SOURCES/
+          cp asama-packaging/systemd/asama-nv-hostengine.service ~/rpmbuild/SOURCES/
+          cp asama-packaging/scripts/configure-hostengine.sh ~/rpmbuild/SOURCES/asama-dcgm-configure-hostengine
           cp asama-packaging/config/dcgm-counters-*.csv asama-packaging/config/dcgm-exporter-*.env ~/rpmbuild/SOURCES/
           sed -e "s/_RPM_VERSION_/${RPM_VERSION}/" -e "s/_RPM_RELEASE_/${RPM_RELEASE}/" \
             asama-packaging/rpm/asama-dcgm-exporter.spec > ~/rpmbuild/SPECS/asama-dcgm-exporter.spec

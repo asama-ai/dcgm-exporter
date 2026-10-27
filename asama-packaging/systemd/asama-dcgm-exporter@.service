@@ -1,7 +1,7 @@
 [Unit]
 Description=Asama AI DCGM Exporter (%i)
 Documentation=https://github.com/asama-ai/dcgm-exporter
-After=network.target asama-dcgm-exporter@health.service
+After=network.target asama-nv-hostengine.service asama-dcgm-exporter@health.service
 PartOf=asama-dcgm-exporter.service
 ConditionPathExistsGlob=/dev/nvidia[0-9]*
 

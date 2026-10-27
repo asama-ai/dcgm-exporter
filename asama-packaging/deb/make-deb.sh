@@ -15,6 +15,7 @@ echo "Creating DCGM DEB package structure in ${DEB_DIR}..."
 
 mkdir -p "${DEB_DIR}/opt/asama.ai/bin"
 mkdir -p "${DEB_DIR}/opt/asama.ai/config"
+mkdir -p "${DEB_DIR}/opt/asama.ai/libexec"
 mkdir -p "${DEB_DIR}/etc/systemd/system"
 
 if [ ! -f "${BIN_DIR}/dcgm-exporter" ]; then
@@ -25,6 +26,9 @@ fi
 cp "${BIN_DIR}/dcgm-exporter" "${DEB_DIR}/opt/asama.ai/bin/"
 cp "${PKG}/systemd/asama-dcgm-exporter.service" "${DEB_DIR}/etc/systemd/system/"
 cp "${PKG}/systemd/asama-dcgm-exporter@.service" "${DEB_DIR}/etc/systemd/system/"
+cp "${PKG}/systemd/asama-nv-hostengine.service" "${DEB_DIR}/etc/systemd/system/"
+cp "${PKG}/scripts/configure-hostengine.sh" "${DEB_DIR}/opt/asama.ai/libexec/asama-dcgm-configure-hostengine"
+chmod 755 "${DEB_DIR}/opt/asama.ai/libexec/asama-dcgm-configure-hostengine"
 cp "${PKG}/config/dcgm-counters-identity.csv" "${DEB_DIR}/opt/asama.ai/config/"
 cp "${PKG}/config/dcgm-counters-health.csv" "${DEB_DIR}/opt/asama.ai/config/"
 cp "${PKG}/config/dcgm-counters-analysis.csv" "${DEB_DIR}/opt/asama.ai/config/"

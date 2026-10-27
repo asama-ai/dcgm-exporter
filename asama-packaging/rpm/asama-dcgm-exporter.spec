@@ -1,5 +1,6 @@
 %define _bindir /opt/asama.ai/bin
 %define _configdir /opt/asama.ai/config
+%define _libexecdir /opt/asama.ai/libexec
 %define _servicedir /etc/systemd/system
 %define debug_package %{nil}
 %define _binary_payload w2.xzdio
@@ -19,6 +20,8 @@ Source5:        dcgm-counters-analysis.csv
 Source6:        dcgm-exporter-identity.env
 Source7:        dcgm-exporter-health.env
 Source8:        dcgm-exporter-analysis.env
+Source9:        asama-nv-hostengine.service
+Source10:       asama-dcgm-configure-hostengine
 
 Requires:       systemd
 Requires(pre):  shadow-utils
@@ -27,7 +30,8 @@ Recommends:     asama-host-agent
 %description
 NVIDIA DCGM metrics exporter for Asama Host Agent.
 Install on hosts with NVIDIA GPUs alongside asama-host-agent.
-Runs identity/health/analysis instances against nv-hostengine at 127.0.0.1:5555.
+Runs identity/health/analysis instances against one nv-hostengine.
+Uses an engine that is already running, otherwise starts asama-nv-hostengine on 127.0.0.1:5555.
 
 %prep
 # Nothing to do here - using direct binary files
@@ -35,11 +39,14 @@ Runs identity/health/analysis instances against nv-hostengine at 127.0.0.1:5555.
 %install
 mkdir -p %{buildroot}%{_bindir}
 mkdir -p %{buildroot}%{_configdir}
+mkdir -p %{buildroot}%{_libexecdir}
 mkdir -p %{buildroot}%{_servicedir}
 
 install -p -m 750 %{SOURCE0} %{buildroot}%{_bindir}/dcgm-exporter
+install -p -m 755 %{SOURCE10} %{buildroot}%{_libexecdir}/asama-dcgm-configure-hostengine
 install -p -m 640 %{SOURCE1} %{buildroot}%{_servicedir}/asama-dcgm-exporter.service
 install -p -m 640 %{SOURCE2} %{buildroot}%{_servicedir}/asama-dcgm-exporter@.service
+install -p -m 640 %{SOURCE9} %{buildroot}%{_servicedir}/asama-nv-hostengine.service
 install -p -m 640 %{SOURCE3} %{buildroot}%{_configdir}/dcgm-counters-identity.csv
 install -p -m 640 %{SOURCE4} %{buildroot}%{_configdir}/dcgm-counters-health.csv
 install -p -m 640 %{SOURCE5} %{buildroot}%{_configdir}/dcgm-counters-analysis.csv
@@ -52,9 +59,12 @@ install -p -m 640 %{SOURCE8} %{buildroot}%{_configdir}/dcgm-exporter-analysis.en
 %dir %attr(750,asama-agent,asama-agent) /opt/asama.ai
 %dir %attr(750,asama-agent,asama-agent) %{_bindir}
 %dir %attr(750,asama-agent,asama-agent) %{_configdir}
+%dir %attr(755,root,root) %{_libexecdir}
 %attr(750,asama-agent,asama-agent) %{_bindir}/dcgm-exporter
+%attr(755,root,root) %{_libexecdir}/asama-dcgm-configure-hostengine
 %attr(644,root,root) %{_servicedir}/asama-dcgm-exporter.service
 %attr(644,root,root) %{_servicedir}/asama-dcgm-exporter@.service
+%attr(644,root,root) %{_servicedir}/asama-nv-hostengine.service
 %config(noreplace) %attr(640,asama-agent,asama-agent) %{_configdir}/dcgm-counters-identity.csv
 %config(noreplace) %attr(640,asama-agent,asama-agent) %{_configdir}/dcgm-counters-health.csv
 %config(noreplace) %attr(640,asama-agent,asama-agent) %{_configdir}/dcgm-counters-analysis.csv
@@ -76,6 +86,7 @@ fi
 
 %post
 systemctl daemon-reload || echo "ERROR: Failed to reload systemd"
+/opt/asama.ai/libexec/asama-dcgm-configure-hostengine || echo "ERROR: Failed to configure nv-hostengine"
 
 if ls /dev/nvidia[0-9]* >/dev/null 2>&1; then
     echo "[INFO] NVIDIA GPU detected. Enabling asama-dcgm-exporter..."
@@ -101,7 +112,8 @@ if [ $1 -eq 0 ]; then
         asama-dcgm-exporter@identity.service \
         asama-dcgm-exporter@analysis.service \
         asama-dcgm-exporter@health.service \
-        asama-dcgm-exporter.service >/dev/null 2>&1 || :
+        asama-dcgm-exporter.service \
+        asama-nv-hostengine.service >/dev/null 2>&1 || :
 fi
 
 %postun

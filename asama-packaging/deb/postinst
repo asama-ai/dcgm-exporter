@@ -23,9 +23,15 @@ for f in dcgm-counters-identity.csv dcgm-counters-health.csv dcgm-counters-analy
     chown asama-agent:asama-agent "/opt/asama.ai/config/${f}"
     chmod 640 "/opt/asama.ai/config/${f}"
 done
-chown root:root /etc/systemd/system/asama-dcgm-exporter.service /etc/systemd/system/asama-dcgm-exporter@.service
+chown root:root \
+    /etc/systemd/system/asama-dcgm-exporter.service \
+    /etc/systemd/system/asama-dcgm-exporter@.service \
+    /etc/systemd/system/asama-nv-hostengine.service \
+    /opt/asama.ai/libexec/asama-dcgm-configure-hostengine
+chmod 755 /opt/asama.ai/libexec/asama-dcgm-configure-hostengine
 
 systemctl daemon-reload || echo "ERROR: Failed to reload systemd"
+/opt/asama.ai/libexec/asama-dcgm-configure-hostengine || echo "ERROR: Failed to configure nv-hostengine"
 
 INSTANCES="asama-dcgm-exporter.service asama-dcgm-exporter@health.service asama-dcgm-exporter@identity.service asama-dcgm-exporter@analysis.service"
 
